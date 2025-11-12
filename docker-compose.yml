@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  m2cc-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: m2cc-test:latest
+    container_name: m2cc-test-interactive
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - ~/.claude:/home/testuser/.claude:ro
+      - ~/.nvm:/home/testuser/.nvm:ro
+    environment:
+      - TEST_HOME=/workspace
+      - LOG_DIR=/workspace/test-logs
+      - REPORT_DIR=/workspace/test-reports
+    stdin_open: true
+    tty: true
+    command: /workspace/test-scripts/interactive-test.sh
+
+  m2cc-automated:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: m2cc-test:latest
+    container_name: m2cc-test-automated
+    working_dir: /workspace
+    volumes:
+      - ./test-output:/workspace/test-output
+      - ./test-logs:/workspace/test-logs
+      - ~/.claude:/home/testuser/.claude:ro
+      - ~/.nvm:/home/testuser/.nvm:ro
+    environment:
+      - TEST_HOME=/workspace
+      - LOG_DIR=/workspace/test-logs
+      - REPORT_DIR=/workspace/test-reports
+      - TEST_MODE=${TEST_MODE:-basic}
+      - TEST_ITERATIONS=${TEST_ITERATIONS:-3}
+      - SKIP_NETWORK_TESTS=${SKIP_NETWORK_TESTS:-false}
+    command: /workspace/test-scripts/automated-test.sh
+    profiles:
+      - automated
+
+networks:
+  default:
+    name: m2cc-test-network
+
+volumes:
+  m2cc-test-logs:
+    driver: local
+  m2cc-test-output:
+    driver: local
