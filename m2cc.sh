@@ -27,6 +27,395 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# 依赖检查和环境准备函数
+
+# 检查基本系统依赖
+check_basic_dependencies() {
+    log_info "🔍 检查系统基础依赖..."
+
+    local missing_deps=()
+    local available_commands=()
+
+    # 检查 curl 或 wget（用于下载）
+    if check_command "curl"; then
+        available_commands+=("curl")
+        log_success "✓ curl 已安装"
+    elif check_command "wget"; then
+        available_commands+=("wget")
+        log_success "✓ wget 已安装"
+    else
+        missing_deps+=("download_tool")
+        log_error "❌ 需要 curl 或 wget 来下载依赖"
+    fi
+
+    # 检查 jq（用于 JSON 处理）
+    if check_command "jq"; then
+        log_success "✓ jq 已安装"
+    else
+        missing_deps+=("jq")
+        log_warning "⚠ jq 未安装，将自动安装"
+    fi
+
+    # 检查 nvm（用于 Node.js 版本管理）
+    if check_nvm; then
+        log_success "✓ nvm 已安装"
+    else
+        missing_deps+=("nvm")
+        log_warning "⚠ nvm 未安装，将自动安装"
+    fi
+
+    # 返回缺失的依赖列表
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo "${missing_deps[@]}"
+        return 1
+    else
+        log_success "✓ 所有基础依赖已就绪"
+        return 0
+    fi
+}
+
+# 智能安装 jq（下载二进制文件方式）
+install_jq_manually() {
+    log_info "正在安装 jq..."
+
+    local temp_dir="/tmp/jq_install"
+    local jq_version="jq-1.6"
+    local jq_binary="jq-osx-amd64"
+    local install_path="/usr/local/bin/jq"
+
+    # 创建临时目录
+    mkdir -p "$temp_dir"
+    cd "$temp_dir"
+
+    # 检测系统架构
+    local arch=$(uname -m)
+    case $arch in
+        "x86_64")
+            jq_binary="jq-osx-amd64"
+            ;;
+        "arm64"|"aarch64")
+            jq_binary="jq-osx-arm64"
+            ;;
+        *)
+            log_error "不支持的系统架构: $arch"
+            rm -rf "$temp_dir"
+            return 1
+            ;;
+    esac
+
+    # 尝试从 GitHub 下载 jq
+    if check_command "curl"; then
+        log_info "正在从 GitHub 下载 jq..."
+        if curl -L "https://github.com/jqlang/jq/releases/download/${jq_version}/${jq_binary}" -o jq; then
+            chmod +x jq
+            if sudo mv jq "$install_path" 2>/dev/null; then
+                log_success "✓ jq 安装成功: $install_path"
+            else
+                # 尝试无 sudo 安装到用户目录
+                local user_bin="$HOME/bin"
+                mkdir -p "$user_bin"
+                mv jq "$user_bin/jq"
+                export PATH="$user_bin:$PATH"
+                log_success "✓ jq 安装成功: $user_bin/jq"
+            fi
+        else
+            log_error "jq 下载失败，请检查网络连接"
+            cd - > /dev/null
+            rm -rf "$temp_dir"
+            return 1
+        fi
+    elif check_command "wget"; then
+        log_info "正在从 GitHub 下载 jq..."
+        if wget -O jq "https://github.com/jqlang/jq/releases/download/${jq_version}/${jq_binary}"; then
+            chmod +x jq
+            if sudo mv jq "$install_path" 2>/dev/null; then
+                log_success "✓ jq 安装成功: $install_path"
+            else
+                local user_bin="$HOME/bin"
+                mkdir -p "$user_bin"
+                mv jq "$user_bin/jq"
+                export PATH="$user_bin:$PATH"
+                log_success "✓ jq 安装成功: $user_bin/jq"
+            fi
+        else
+            log_error "jq 下载失败，请检查网络连接"
+            cd - > /dev/null
+            rm -rf "$temp_dir"
+            return 1
+        fi
+    else
+        log_error "需要 curl 或 wget 来下载 jq"
+        cd - > /dev/null
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # 清理临时文件
+    cd - > /dev/null
+    rm -rf "$temp_dir"
+
+    # 验证安装
+    if check_command "jq"; then
+        local jq_ver=$(jq --version)
+        log_success "✓ jq 验证成功: $jq_ver"
+        return 0
+    else
+        log_error "jq 安装验证失败"
+        return 1
+    fi
+}
+
+# 安全安装 nvm
+install_nvm_safely() {
+    log_info "正在安装 NVM (Node Version Manager)..."
+
+    local nvm_version="v0.39.7"
+    local nvm_install_script="https://raw.githubusercontent.com/nvm-sh/nvm/${nvm_version}/install.sh"
+
+    # 确保 NVM_DIR 存在
+    export NVM_DIR="$HOME/.nvm"
+
+    # 检查网络连接
+    log_info "正在测试网络连接..."
+    if ! ping -c 1 raw.githubusercontent.com &>/dev/null; then
+        log_error "网络连接失败，请检查网络设置"
+        return 1
+    fi
+
+    # 下载并安装 nvm
+    if check_command "curl"; then
+        log_info "正在下载并安装 NVM..."
+        if curl -o- "$nvm_install_script" | bash; then
+            log_success "✓ NVM 下载成功"
+        else
+            log_error "NVM 下载失败"
+            return 1
+        fi
+    elif check_command "wget"; then
+        log_info "正在下载并安装 NVM..."
+        if wget -qO- "$nvm_install_script" | bash; then
+            log_success "✓ NVM 下载成功"
+        else
+            log_error "NVM 下载失败"
+            return 1
+        fi
+    else
+        log_error "需要 curl 或 wget 来安装 NVM"
+        return 1
+    fi
+
+    # 确保 nvm 可用
+    if [ -s "$NVM_DIR/nvm.sh" ]; then
+        \. "$NVM_DIR/nvm.sh"
+        log_success "✓ NVM 加载成功"
+    else
+        log_error "NVM 安装文件未找到"
+        return 1
+    fi
+
+    # 验证安装
+    if command -v nvm >/dev/null 2>&1; then
+        local nvm_ver=$(nvm --version)
+        log_success "✓ NVM 安装成功: $nvm_ver"
+        return 0
+    else
+        log_error "NVM 安装验证失败"
+        return 1
+    fi
+}
+
+# Shell 检测和配置更新
+detect_and_update_shell() {
+    log_info "正在检测和更新 Shell 配置..."
+
+    local current_shell=$(basename "$SHELL")
+    local config_files=()
+
+    case $current_shell in
+        "bash")
+            config_files+=("$HOME/.bashrc")
+            config_files+=("$HOME/.bash_profile")
+            config_files+=("$HOME/.profile")
+            ;;
+        "zsh")
+            config_files+=("$HOME/.zshrc")
+            config_files+=("$HOME/.zprofile")
+            ;;
+        *)
+            # 通用处理
+            config_files+=("$HOME/.bashrc")
+            config_files+=("$HOME/.zshrc")
+            config_files+=("$HOME/.profile")
+            ;;
+    esac
+
+    # 添加 nvm 配置到配置文件
+    local nvm_config='
+# NVM Configuration
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+'
+
+    local updated_files=0
+    for config_file in "${config_files[@]}"; do
+        if [ -f "$config_file" ]; then
+            # 检查是否已包含 nvm 配置
+            if ! grep -q "NVM Configuration" "$config_file"; then
+                echo "$nvm_config" >> "$config_file"
+                log_success "✓ 已更新: $config_file"
+                updated_files=$((updated_files + 1))
+            else
+                log_info "✓ 已包含: $config_file"
+            fi
+        fi
+    done
+
+    # 如果没有配置文件，创建一个
+    if [ $updated_files -eq 0 ]; then
+        if [[ "$current_shell" == "zsh" ]]; then
+            echo "$nvm_config" > "$HOME/.zshrc"
+            log_success "✓ 创建配置文件: $HOME/.zshrc"
+        else
+            echo "$nvm_config" > "$HOME/.bashrc"
+            log_success "✓ 创建配置文件: $HOME/.bashrc"
+        fi
+    fi
+}
+
+# 更新脚本执行环境
+update_script_environment() {
+    log_info "正在更新脚本执行环境..."
+
+    # 设置 nvm 环境
+    export NVM_DIR="$HOME/.nvm"
+    if [ -s "$NVM_DIR/nvm.sh" ]; then
+        \. "$NVM_DIR/nvm.sh"
+        \. "$NVM_DIR/bash_completion" 2>/dev/null
+        log_success "✓ NVM 环境已加载"
+    fi
+
+    # 确保用户 bin 目录在 PATH 中
+    local user_bin="$HOME/bin"
+    if [ -d "$user_bin" ]; then
+        export PATH="$user_bin:$PATH"
+        log_success "✓ 用户 bin 目录已添加到 PATH"
+    fi
+
+    # 确保 /usr/local/bin 在 PATH 中
+    export PATH="/usr/local/bin:$PATH"
+
+    # 验证关键命令
+    local commands_to_check=("curl" "wget" "jq" "nvm")
+    local failed_commands=()
+
+    for cmd in "${commands_to_check[@]}"; do
+        if ! check_command "$cmd"; then
+            failed_commands+=("$cmd")
+        fi
+    done
+
+    if [ ${#failed_commands[@]} -eq 0 ]; then
+        log_success "✓ 所有依赖已准备就绪"
+        return 0
+    else
+        log_error "❌ 以下命令仍不可用: ${failed_commands[*]}"
+        return 1
+    fi
+}
+
+# 智能安装缺失的依赖
+install_missing_dependencies() {
+    log_info "🔧 开始安装缺失的依赖..."
+
+    local install_attempts=0
+    local max_attempts=3
+
+    while [ $install_attempts -lt $max_attempts ]; do
+        # 检查基本依赖
+        if check_basic_dependencies; then
+            log_success "✓ 所有依赖检查通过"
+            break
+        fi
+
+        install_attempts=$((install_attempts + 1))
+        log_info "尝试安装依赖 (第 $install_attempts/$max_attempts 次)..."
+
+        # 安装缺失的依赖
+        local missing_deps=($(check_basic_dependencies 2>&1))
+        local install_success=true
+
+        # 安装 jq
+        if echo "${missing_deps[@]}" | grep -q "jq"; then
+            log_info "正在安装 jq..."
+            if ! install_jq_manually; then
+                install_success=false
+                log_error "jq 安装失败"
+            fi
+        fi
+
+        # 安装 nvm
+        if echo "${missing_deps[@]}" | grep -q "nvm"; then
+            log_info "正在安装 nvm..."
+            if ! install_nvm_safely; then
+                install_success=false
+                log_error "nvm 安装失败"
+            else
+                # nvm 安装成功后更新配置文件
+                detect_and_update_shell
+            fi
+        fi
+
+        # 更新环境
+        update_script_environment
+
+        if [ "$install_success" = false ] && [ $install_attempts -lt $max_attempts ]; then
+            log_warning "安装失败，5 秒后重试..."
+            sleep 5
+        elif [ "$install_success" = false ] && [ $install_attempts -eq $max_attempts ]; then
+            log_error "依赖安装失败，已达到最大重试次数"
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+# 准备完整环境
+prepare_environment() {
+    log_info "🚀 开始环境准备流程..."
+
+    # 显示系统信息
+    log_info "检测到系统: $(uname -s) $(uname -m)"
+    log_info "当前用户: $(whoami)"
+    log_info "用户目录: $HOME"
+
+    # 安装缺失依赖
+    if ! install_missing_dependencies; then
+        log_error "依赖安装失败，无法继续安装流程"
+        echo
+        echo -e "${YELLOW}💡 可能的解决方案：${NC}"
+        echo "1. 检查网络连接是否正常"
+        echo "2. 确保有足够的磁盘空间（至少 100MB）"
+        echo "3. 确保有安装软件的权限"
+        echo "4. 手动安装依赖后重新运行脚本"
+        echo
+        echo -e "${CYAN}手动安装命令：${NC}"
+        echo "  curl -L https://github.com/jqlang/jq/releases/download/jq-1.6/jq-osx-amd64 -o jq"
+        echo "  chmod +x jq && sudo mv jq /usr/local/bin/"
+        echo "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
+        exit 1
+    fi
+
+    # 更新执行环境
+    if ! update_script_environment; then
+        log_error "环境更新失败"
+        exit 1
+    fi
+
+    log_success "✓ 环境准备完成，可以开始安装流程！"
+}
+
 # 显示欢迎界面
 show_welcome() {
     clear
@@ -1469,6 +1858,9 @@ wizard_mode() {
     check_network
     check_system_resources
 
+    # 准备环境（安装缺失的依赖）
+    prepare_environment
+
     # 选择安装组件
     select_components
 
@@ -1498,6 +1890,9 @@ express_mode() {
     echo
 
     if confirm_action "确认开始安装？" "y"; then
+        # 准备环境（安装缺失的依赖）
+        prepare_environment
+        
         execute_installation
     else
         echo "安装已取消"
