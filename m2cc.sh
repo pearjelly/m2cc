@@ -1610,6 +1610,62 @@ configure_claude_code() {
     return 0
 }
 
+# 设置脚本为全局可执行
+setup_global_execution() {
+    echo
+    echo -e "${CYAN}${BOLD}🔧 设置脚本全局可执行${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo
+    echo -e "${YELLOW}💡 提示：${NC} 为了方便以后在任意路径使用此脚本，建议将其设置为全局可执行。"
+    echo -e "   设置后，您可以在任意终端位置直接运行 ${GREEN}m2cc${NC} 命令。"
+    echo
+
+    if confirm_action "是否将脚本设置为全局可执行？(推荐)" "y"; then
+        echo
+        log_info "正在设置脚本为全局可执行..."
+
+        # 获取当前脚本的绝对路径
+        local current_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "$0")"
+        local target_path="/usr/local/bin/m2cc"
+
+        # 尝试复制到 /usr/local/bin/
+        if sudo cp "$current_script" "$target_path" 2>/dev/null; then
+            sudo chmod +x "$target_path"
+            log_success "✓ 脚本已复制到: $target_path"
+            echo -e "${GREEN}💡 使用方法：${NC} 现在您可以在任意位置运行 ${GREEN}m2cc${NC} 命令"
+            echo -e "${GREEN}   例如：${NC} m2cc --switch deepseek 或 m2cc --list"
+        else
+            # 如果复制失败，尝试创建符号链接
+            log_warning "无法写入 /usr/local/bin/，尝试创建符号链接..."
+
+            if ln -sf "$current_script" "$target_path" 2>/dev/null; then
+                log_success "✓ 符号链接已创建: $target_path"
+                echo -e "${GREEN}💡 使用方法：${NC} 现在您可以在任意位置运行 ${GREEN}m2cc${NC} 命令"
+            else
+                # 如果符号链接也失败，提供手动方式
+                log_error "❌ 自动设置失败，您需要手动设置："
+                echo
+                echo -e "${YELLOW}手动设置方法：${NC}"
+                echo -e "${CYAN}1.${NC} 复制脚本到系统目录："
+                echo -e "   ${GREEN}sudo cp $current_script /usr/local/bin/m2cc${NC}"
+                echo -e "   ${GREEN}sudo chmod +x /usr/local/bin/m2cc${NC}"
+                echo
+                echo -e "${CYAN}2.${NC} 或者将脚本目录添加到 PATH："
+                echo -e "   ${GREEN}echo 'export PATH=\"$(dirname "$current_script"):\$PATH\"' >> ~/.bashrc${NC}"
+                echo -e "   ${GREEN}source ~/.bashrc${NC}"
+                echo
+            fi
+        fi
+    else
+        echo
+        log_info "跳过全局可执行设置"
+        echo -e "${YELLOW}💡 提示：${NC} 如需稍后设置，请手动运行："
+        echo -e "   ${GREEN}sudo cp $(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/m2cc.sh /usr/local/bin/m2cc${NC}"
+        echo -e "   ${GREEN}sudo chmod +x /usr/local/bin/m2cc${NC}"
+    fi
+    echo
+}
+
 # 显示成功总结
 show_success_summary() {
     clear
@@ -1649,6 +1705,9 @@ show_success_summary() {
     fi
 
     show_usage_examples
+
+    # 询问是否设置为全局可执行
+    setup_global_execution
 }
 
 # 显示使用示例
@@ -2044,18 +2103,27 @@ M2CC - Claude Code 多模型配置管理工具
     --status                显示当前配置状态
 
 示例：
-    $0                      # 启动安装向导
-    $0 --switch deepseek    # 切换到 DeepSeek 模型
-    $0 --switch glm         # 切换到 GLM-4.6 模型
-    $0 --switch glm-flash   # 切换到 GLM-4.5-Flash (免费) 模型
-    $0 --list               # 查看所有已配置的模型
-    $0 --configure          # 配置或重新配置模型
+    m2cc                    # 启动安装向导（设置全局可执行后）
+    ./m2cc.sh               # 或直接运行脚本文件
+    m2cc --switch deepseek  # 切换到 DeepSeek 模型（全局可执行后）
+    m2cc --switch glm       # 切换到 GLM-4.6 模型（全局可执行后）
+    m2cc --switch glm-flash # 切换到 GLM-4.5-Flash (免费) 模型（全局可执行后）
+    m2cc --list             # 查看所有已配置的模型（全局可执行后）
+    m2cc --configure        # 配置或重新配置模型（全局可执行后）
 
 支持的模型提供商：
     - minimax     : MiniMax-M2 (高性能对话模型)
     - deepseek    : DeepSeek (代码生成专家)
     - glm         : GLM-4.6 (智谱 AI Coding Plan)
     - glm-flash   : 🆓 GLM-4.5-Flash (免费推荐) 🆓
+
+安装完成提示：
+    安装向导结束后会询问是否将脚本设置为全局可执行。
+    设置后，您可以在任意位置直接运行 'm2cc' 命令，无需记住脚本路径。
+
+手动设置全局可执行：
+    sudo cp /path/to/m2cc.sh /usr/local/bin/m2cc
+    sudo chmod +x /usr/local/bin/m2cc
 
 EOF
 }
@@ -2195,7 +2263,7 @@ handle_arguments() {
             exit 0
             ;;
         -v|--version)
-            echo "M2CC version 0.0.4"
+            echo "M2CC version 0.0.5"
             echo "Claude Code Multi-Provider Configuration Tool"
             exit 0
             ;;
