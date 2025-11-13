@@ -1751,7 +1751,7 @@ handle_error() {
     echo
     if confirm_action "是否显示完整的错误日志？" "n"; then
         # 这里可以显示更详细的日志
-        echo "详细日志位置：$HOME/cliode-install.log"
+        echo "详细日志位置：$HOME/m2cc-install.log"
     fi
 }
 
