@@ -726,10 +726,13 @@ check_nvm() {
 install_nvm() {
     log_info "开始安装 NVM..."
     
+    local nvm_version="v0.39.7"
+    local nvm_install_script="https://raw.githubusercontent.com/nvm-sh/nvm/${nvm_version}/install.sh"
+
     if check_command "curl"; then
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+        curl -o- "$nvm_install_script" | bash
     elif check_command "wget"; then
-        wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+        wget -qO- "$nvm_install_script" | bash
     else
         log_error "需要 curl 或 wget 来安装 NVM"
         return 1
