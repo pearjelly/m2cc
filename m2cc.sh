@@ -395,7 +395,7 @@ show_welcome() {
     echo -e "${YELLOW}├─ ③ 更新 NPM (Node 包管理器)${NC}"
     echo -e "${YELLOW}├─ ④ 安装 Claude Code${NC}"
     echo -e "${YELLOW}│   └─ ${GREEN}Claude Code${NC} - Anthropic AI 助手${NC}"
-    echo -e "${YELLOW}└─ ⑤ 配置 AI 模型（MiniMax/DeepSeek/GLM-4.6）(可选)${NC}"
+    echo -e "${YELLOW}└─ ⑤ 配置 AI 模型（MiniMax/DeepSeek/GLM）(可选)${NC}"
     echo
     echo -e "${GREEN}💡 提示：本向导支持交互式操作，您可以选择跳过某些步骤${NC}"
     echo -e "${GREEN}   整个过程大约需要 5-10 分钟，取决于您的网络速度${NC}"
@@ -552,7 +552,7 @@ select_components() {
     # 模型配置
     if confirm_action "是否现在配置 AI 模型提供商？" "n"; then
         configure_models=true
-        show_step_status "info" "将配置 AI 模型（支持 MiniMax-M2、DeepSeek、GLM-4.6）"
+        show_step_status "info" "将配置 AI 模型（支持 MiniMax-M2.1.1、DeepSeek-V3.2、GLM-4.7）"
     else
         configure_models=false
         show_step_status "info" "跳过模型配置（可稍后手动配置）"
@@ -907,18 +907,18 @@ migrate_existing_config() {
                 config.providers = config.providers || {};
                 config.providers[provider] = {
                     name: provider,
-                    displayName: isMinimax ? 'MiniMax-M2' : 'DeepSeek',
+                    displayName: isMinimax ? 'MiniMax-M2.1' : 'DeepSeek',
                     apiKeyName: isMinimax ? 'MINIMAX_API_KEY' : 'DEEPSEEK_API_KEY',
                     apiKeyUrl: isMinimax ? 'https://platform.minimaxi.com/user-center/basic-information/interface-key' : 'https://platform.deepseek.com/api_keys',
                     baseUrl: url,
                     apiKey: key,
                     timeout: isMinimax ? '3000000' : '600000',
                     models: {
-                        default: isMinimax ? 'MiniMax-M2' : 'deepseek-chat',
-                        small_fast: isMinimax ? 'MiniMax-M2' : 'deepseek-chat',
-                        DEFAULT_SONNET_MODEL: isMinimax ? 'MiniMax-M2' : 'deepseek-chat',
-                        DEFAULT_OPUS_MODEL: isMinimax ? 'MiniMax-M2' : 'deepseek-reasoner',
-                        DEFAULT_HAIKU_MODEL: isMinimax ? 'MiniMax-M2' : 'deepseek-coder'
+                        default: isMinimax ? 'MiniMax-M2.1' : 'deepseek-chat',
+                        small_fast: isMinimax ? 'MiniMax-M2.1' : 'deepseek-chat',
+                        DEFAULT_SONNET_MODEL: isMinimax ? 'MiniMax-M2.1' : 'deepseek-chat',
+                        DEFAULT_OPUS_MODEL: isMinimax ? 'MiniMax-M2.1' : 'deepseek-reasoner',
+                        DEFAULT_HAIKU_MODEL: isMinimax ? 'MiniMax-M2.1' : 'deepseek-coder'
                     }
                 };
                 config.activeProvider = provider;
@@ -946,7 +946,7 @@ migrate_existing_config() {
 
 # 配置 MiniMax 提供商
 configure_minimax_provider() {
-    log_info "配置 MiniMax-M2 模型提供商..."
+    log_info "配置 MiniMax-M2.1 模型提供商..."
 
     if get_minimax_api_key; then
         configure_provider "minimax" "$MINIMAX_API_KEY"
@@ -970,7 +970,7 @@ configure_deepseek_provider() {
 
 # 配置 GLM 提供商
 configure_glm_provider() {
-    log_info "配置 GLM-4.6 模型提供商..."
+    log_info "配置 GLM-4.7 模型提供商..."
 
     if get_glm_api_key; then
         configure_provider "glm" "$GLM_API_KEY"
@@ -1010,25 +1010,25 @@ configure_provider() {
 
     case $provider_name in
         "minimax")
-            provider_display="MiniMax-M2"
+            provider_display="MiniMax-M2.1"
             api_key_url="https://platform.minimaxi.com/user-center/basic-information/interface-key"
             base_url="https://api.minimaxi.com/anthropic"
             timeout="3000000"
             if command -v node >/dev/null 2>&1; then
                 models_json=$(node -e 'console.log(JSON.stringify({
-                    default: "MiniMax-M2",
-                    small_fast: "MiniMax-M2",
-                    DEFAULT_SONNET_MODEL: "MiniMax-M2",
-                    DEFAULT_OPUS_MODEL: "MiniMax-M2",
-                    DEFAULT_HAIKU_MODEL: "MiniMax-M2"
+                    default: "MiniMax-M2.1",
+                    small_fast: "MiniMax-M2.1",
+                    DEFAULT_SONNET_MODEL: "MiniMax-M2.1",
+                    DEFAULT_OPUS_MODEL: "MiniMax-M2.1",
+                    DEFAULT_HAIKU_MODEL: "MiniMax-M2.1"
                 }))')
             else
                 models_json='{
-                    "default": "MiniMax-M2",
-                    "small_fast": "MiniMax-M2",
-                    "DEFAULT_SONNET_MODEL": "MiniMax-M2",
-                    "DEFAULT_OPUS_MODEL": "MiniMax-M2",
-                    "DEFAULT_HAIKU_MODEL": "MiniMax-M2"
+                    "default": "MiniMax-M2.1",
+                    "small_fast": "MiniMax-M2.1",
+                    "DEFAULT_SONNET_MODEL": "MiniMax-M2.1",
+                    "DEFAULT_OPUS_MODEL": "MiniMax-M2.1",
+                    "DEFAULT_HAIKU_MODEL": "MiniMax-M2.1"
                 }'
             fi
             ;;
@@ -1056,24 +1056,24 @@ configure_provider() {
             fi
             ;;
         "glm")
-            provider_display="GLM-4.6"
+            provider_display="GLM-4.7"
             api_key_url="https://bigmodel.cn/usercenter/proj-mgmt/apikeys"
             base_url="https://open.bigmodel.cn/api/anthropic"
             timeout="3000000"
             if command -v node >/dev/null 2>&1; then
                 models_json=$(node -e 'console.log(JSON.stringify({
-                    default: "GLM-4.6",
-                    small_fast: "GLM-4.6",
-                    DEFAULT_SONNET_MODEL: "GLM-4.6",
-                    DEFAULT_OPUS_MODEL: "GLM-4.6",
+                    default: "GLM-4.7",
+                    small_fast: "GLM-4.7",
+                    DEFAULT_SONNET_MODEL: "GLM-4.7",
+                    DEFAULT_OPUS_MODEL: "GLM-4.7",
                     DEFAULT_HAIKU_MODEL: "GLM-4.5-Air"
                 }))')
             else
                 models_json='{
-                    "default": "GLM-4.6",
-                    "small_fast": "GLM-4.6",
-                    "DEFAULT_SONNET_MODEL": "GLM-4.6",
-                    "DEFAULT_OPUS_MODEL": "GLM-4.6",
+                    "default": "GLM-4.7",
+                    "small_fast": "GLM-4.7",
+                    "DEFAULT_SONNET_MODEL": "GLM-4.7",
+                    "DEFAULT_OPUS_MODEL": "GLM-4.7",
                     "DEFAULT_HAIKU_MODEL": "GLM-4.5-Air"
                 }'
             fi
@@ -1424,7 +1424,7 @@ get_glm_api_key() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo
     echo -e "${YELLOW}📝 说明：${NC}"
-    echo "   GLM API Key 用于访问 GLM-4.6 AI 模型服务。"
+    echo "   GLM API Key 用于访问 GLM-4.7 AI 模型服务。"
     echo "   基于智谱 AI Coding Plan，您可以获得优惠价格和更高额度。"
     echo
 
@@ -1555,7 +1555,7 @@ configure_claude_code() {
     local config_count=0
 
     # MiniMax
-    if confirm_action "是否配置 MiniMax-M2 模型？" "y"; then
+    if confirm_action "是否配置 MiniMax-M2.1 模型？" "y"; then
         if configure_minimax_provider; then
             config_count=$((config_count + 1))
         fi
@@ -1568,8 +1568,8 @@ configure_claude_code() {
         fi
     fi
 
-    # GLM-4.6
-    if confirm_action "是否配置 GLM-4.6 模型？（高性能付费）" "n"; then
+    # GLM-4.7
+    if confirm_action "是否配置 GLM-4.7 模型？（高性能付费）" "n"; then
         if configure_glm_provider; then
             config_count=$((config_count + 1))
         fi
@@ -2090,15 +2090,15 @@ M2CC - Claude Code 多模型配置管理工具
     m2cc                    # 启动安装向导（设置全局可执行后）
     ./m2cc.sh               # 或直接运行脚本文件
     m2cc --switch deepseek  # 切换到 DeepSeek 模型（全局可执行后）
-    m2cc --switch glm       # 切换到 GLM-4.6 模型（全局可执行后）
+    m2cc --switch glm       # 切换到 GLM-4.7 模型（全局可执行后）
     m2cc --switch glm-flash # 切换到 GLM-4.5-Flash (免费) 模型（全局可执行后）
     m2cc --list             # 查看所有已配置的模型（全局可执行后）
     m2cc --configure        # 配置或重新配置模型（全局可执行后）
 
 支持的模型提供商：
-    - minimax     : MiniMax-M2 (高性能对话模型)
+    - minimax     : MiniMax-M2.1 (高性能对话模型)
     - deepseek    : DeepSeek (代码生成专家)
-    - glm         : GLM-4.6 (智谱 AI Coding Plan)
+    - glm         : GLM-4.7 (智谱 AI Coding Plan)
     - glm-flash   : 🆓 GLM-4.5-Flash (免费推荐) 🆓
 
 安装完成提示：
