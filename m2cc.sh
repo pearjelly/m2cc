@@ -48,13 +48,6 @@ check_basic_dependencies() {
         log_error "❌ 需要 curl 或 wget 来下载依赖"
     fi
 
-    # 检查 jq（用于 JSON 处理）
-    if check_command "jq"; then
-        log_success "✓ jq 已安装"
-    else
-        missing_deps+=("jq")
-        log_warning "⚠ jq 未安装，将自动安装"
-    fi
 
     # 检查 nvm（用于 Node.js 版本管理）
     if check_nvm; then
@@ -74,95 +67,77 @@ check_basic_dependencies() {
     fi
 }
 
-# 智能安装 jq（下载二进制文件方式）
-install_jq_manually() {
-    log_info "正在安装 jq..."
+# Node.js JSON 管理器
+json_manager() {
+    local action=$1
+    local file=$2
+    local key=$3
+    local value=$4
 
-    local temp_dir="/tmp/jq_install"
-    local jq_version="jq-1.6"
-    local jq_binary="jq-osx-amd64"
-    local install_path="/usr/local/bin/jq"
+    # 简单的 Node.js 脚本来处理 JSON
+    node -e "
+    const fs = require('fs');
+    const action = '$action';
+    const filePath = '$file';
+    const keyPath = '$key';
+    const valueArg = process.argv[1];
 
-    # 创建临时目录
-    mkdir -p "$temp_dir"
-    cd "$temp_dir"
+    function getNestedValue(obj, path) {
+        if (!path) return obj;
+        return path.split('.').reduce((o, k) => (o || {})[k], obj);
+    }
 
-    # 检测系统架构
-    local arch=$(uname -m)
-    case $arch in
-        "x86_64")
-            jq_binary="jq-osx-amd64"
-            ;;
-        "arm64"|"aarch64")
-            jq_binary="jq-osx-arm64"
-            ;;
-        *)
-            log_error "不支持的系统架构: $arch"
-            rm -rf "$temp_dir"
-            return 1
-            ;;
-    esac
+    function setNestedValue(obj, path, value) {
+        const keys = path.split('.');
+        const lastKey = keys.pop();
+        const target = keys.reduce((o, k) => o[k] = o[k] || {}, obj);
+        
+        try {
+            // 尝试解析为 JSON (boolean, number, object)
+            target[lastKey] = JSON.parse(valueArg);
+        } catch (e) {
+            // 否则作为字符串
+            target[lastKey] = valueArg;
+        }
+        return obj;
+    }
 
-    # 尝试从 GitHub 下载 jq
-    if check_command "curl"; then
-        log_info "正在从 GitHub 下载 jq..."
-        if curl -L "https://github.com/jqlang/jq/releases/download/${jq_version}/${jq_binary}" -o jq; then
-            chmod +x jq
-            if sudo mv jq "$install_path" 2>/dev/null; then
-                log_success "✓ jq 安装成功: $install_path"
-            else
-                # 尝试无 sudo 安装到用户目录
-                local user_bin="$HOME/bin"
-                mkdir -p "$user_bin"
-                mv jq "$user_bin/jq"
-                export PATH="$user_bin:$PATH"
-                log_success "✓ jq 安装成功: $user_bin/jq"
-            fi
-        else
-            log_error "jq 下载失败，请检查网络连接"
-            cd - > /dev/null
-            rm -rf "$temp_dir"
-            return 1
-        fi
-    elif check_command "wget"; then
-        log_info "正在从 GitHub 下载 jq..."
-        if wget -O jq "https://github.com/jqlang/jq/releases/download/${jq_version}/${jq_binary}"; then
-            chmod +x jq
-            if sudo mv jq "$install_path" 2>/dev/null; then
-                log_success "✓ jq 安装成功: $install_path"
-            else
-                local user_bin="$HOME/bin"
-                mkdir -p "$user_bin"
-                mv jq "$user_bin/jq"
-                export PATH="$user_bin:$PATH"
-                log_success "✓ jq 安装成功: $user_bin/jq"
-            fi
-        else
-            log_error "jq 下载失败，请检查网络连接"
-            cd - > /dev/null
-            rm -rf "$temp_dir"
-            return 1
-        fi
-    else
-        log_error "需要 curl 或 wget 来下载 jq"
-        cd - > /dev/null
-        rm -rf "$temp_dir"
-        return 1
-    fi
+    try {
+        let content = {};
+        if (fs.existsSync(filePath)) {
+            try {
+                content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch (e) {
+                // 如果文件损坏或为空，从空对象开始
+            }
+        }
 
-    # 清理临时文件
-    cd - > /dev/null
-    rm -rf "$temp_dir"
-
-    # 验证安装
-    if check_command "jq"; then
-        local jq_ver=$(jq --version)
-        log_success "✓ jq 验证成功: $jq_ver"
-        return 0
-    else
-        log_error "jq 安装验证失败"
-        return 1
-    fi
+        if (action === 'get') {
+            const val = getNestedValue(content, keyPath);
+            if (typeof val === 'object' && val !== null) {
+                console.log(JSON.stringify(val));
+            } else if (val !== undefined) {
+                console.log(val);
+            }
+        } else if (action === 'set') {
+            setNestedValue(content, keyPath, valueArg);
+            fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
+        } else if (action === 'keys') {
+            const val = getNestedValue(content, keyPath);
+             if (typeof val === 'object' && val !== null) {
+                Object.keys(val).forEach(k => console.log(k));
+            }
+        } else if (action === 'merge') {
+            // valueArg is JSON string to merge
+             const toMerge = JSON.parse(valueArg);
+             Object.assign(content, toMerge);
+             fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
+        }
+    } catch (err) {
+        console.error('JSON Error:', err.message);
+        process.exit(1);
+    }
+    " "$value" 2>/dev/null
 }
 
 # 安全安装 nvm
@@ -306,7 +281,7 @@ update_script_environment() {
     export PATH="/usr/local/bin:$PATH"
 
     # 验证关键命令
-    local commands_to_check=("curl" "wget" "jq" "nvm")
+    local commands_to_check=("curl" "wget" "nvm")
     local failed_commands=()
 
     for cmd in "${commands_to_check[@]}"; do
@@ -345,14 +320,6 @@ install_missing_dependencies() {
         local missing_deps=($(check_basic_dependencies 2>&1))
         local install_success=true
 
-        # 安装 jq
-        if echo "${missing_deps[@]}" | grep -q "jq"; then
-            log_info "正在安装 jq..."
-            if ! install_jq_manually; then
-                install_success=false
-                log_error "jq 安装失败"
-            fi
-        fi
 
         # 安装 nvm
         if echo "${missing_deps[@]}" | grep -q "nvm"; then
@@ -401,8 +368,6 @@ prepare_environment() {
         echo "4. 手动安装依赖后重新运行脚本"
         echo
         echo -e "${CYAN}手动安装命令：${NC}"
-        echo "  curl -L https://github.com/jqlang/jq/releases/download/jq-1.6/jq-osx-amd64 -o jq"
-        echo "  chmod +x jq && sudo mv jq /usr/local/bin/"
         echo "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
         exit 1
     fi
@@ -846,12 +811,12 @@ load_provider_config() {
         return 1
     fi
 
-    # 使用 jq 加载配置（如果可用）
-    if command -v jq >/dev/null 2>&1; then
-        jq -r '.' "$providers_file" 2>/dev/null || echo '{"providers": {}, "activeProvider": null}'
+    # 使用 json_manager 加载配置
+    if command -v node >/dev/null 2>&1; then
+        json_manager "get" "$providers_file" "" || echo '{"providers": {}, "activeProvider": null}'
     else
-        # 备用方案：简单读取
-        cat "$providers_file" 2>/dev/null || echo '{"providers": {}, "activeProvider": null}'
+        # 备用方案（不应该发生，除非 node 没安装）
+        echo '{"providers": {}, "activeProvider": null}'
     fi
 }
 
@@ -865,13 +830,21 @@ save_provider_config() {
         return 1
     fi
 
-    if command -v jq >/dev/null 2>&1; then
-        # 使用 tee 同时显示输出并保存到文件
-        echo "$config" | jq '.' | tee "$providers_file" > /dev/null
-        local jq_result=$?
-        if [ $jq_result -ne 0 ]; then
-            log_error "jq 格式化配置失败"
-            return 1
+    if command -v node >/dev/null 2>&1; then
+        # 使用 Node.js 格式化并保存
+        node -e "
+        const fs = require('fs');
+        try {
+            const data = JSON.parse(process.argv[1]);
+            fs.writeFileSync('$providers_file', JSON.stringify(data, null, 2));
+            console.log(JSON.stringify(data, null, 2)); // 输出到控制台
+        } catch(e) { process.exit(1); }
+        " "$config"
+        
+        local node_result=$?
+        if [ $node_result -ne 0 ]; then
+             log_error "配置保存失败"
+             return 1
         fi
     else
         echo "$config" > "$providers_file"
@@ -920,27 +893,38 @@ migrate_existing_config() {
     fi
 
     # 创建迁移后的配置
-    if command -v jq >/dev/null 2>&1; then
-        local new_config=$(echo "$current_config" | jq \
-            --arg provider "$provider_name" \
-            --arg key "$api_key" \
-            --arg url "$base_url" \
-            '.providers[$provider] = {
-                "name": $provider,
-                "displayName": (if $provider == "minimax" then "MiniMax-M2" else "DeepSeek" end),
-                "apiKeyName": (if $provider == "minimax" then "MINIMAX_API_KEY" else "DEEPSEEK_API_KEY" end),
-                "apiKeyUrl": (if $provider == "minimax" then "https://platform.minimaxi.com/user-center/basic-information/interface-key" else "https://platform.deepseek.com/api_keys" end),
-                "baseUrl": $url,
-                "apiKey": $key,
-                "timeout": (if $provider == "minimax" then "3000000" else "600000" end),
-                "models": {
-                    "default": (if $provider == "minimax" then "MiniMax-M2" else "deepseek-chat" end),
-                    "small_fast": (if $provider == "minimax" then "MiniMax-M2" else "deepseek-chat" end),
-                    "DEFAULT_SONNET_MODEL": (if $provider == "minimax" then "MiniMax-M2" else "deepseek-chat" end),
-                    "DEFAULT_OPUS_MODEL": (if $provider == "minimax" then "MiniMax-M2" else "deepseek-reasoner" end),
-                    "DEFAULT_HAIKU_MODEL": (if $provider == "minimax" then "MiniMax-M2" else "deepseek-coder" end)
-                }
-            } | .activeProvider = $provider')
+    if command -v node >/dev/null 2>&1; then
+        local new_config=$(node -e "
+            try {
+                const config = JSON.parse(process.argv[1]);
+                const provider = '$provider_name';
+                const key = '$api_key';
+                const url = '$base_url';
+                
+                const isMinimax = provider === 'minimax';
+                
+                // 构建配置对象
+                config.providers = config.providers || {};
+                config.providers[provider] = {
+                    name: provider,
+                    displayName: isMinimax ? 'MiniMax-M2' : 'DeepSeek',
+                    apiKeyName: isMinimax ? 'MINIMAX_API_KEY' : 'DEEPSEEK_API_KEY',
+                    apiKeyUrl: isMinimax ? 'https://platform.minimaxi.com/user-center/basic-information/interface-key' : 'https://platform.deepseek.com/api_keys',
+                    baseUrl: url,
+                    apiKey: key,
+                    timeout: isMinimax ? '3000000' : '600000',
+                    models: {
+                        default: isMinimax ? 'MiniMax-M2' : 'deepseek-chat',
+                        small_fast: isMinimax ? 'MiniMax-M2' : 'deepseek-chat',
+                        DEFAULT_SONNET_MODEL: isMinimax ? 'MiniMax-M2' : 'deepseek-chat',
+                        DEFAULT_OPUS_MODEL: isMinimax ? 'MiniMax-M2' : 'deepseek-reasoner',
+                        DEFAULT_HAIKU_MODEL: isMinimax ? 'MiniMax-M2' : 'deepseek-coder'
+                    }
+                };
+                config.activeProvider = provider;
+                console.log(JSON.stringify(config, null, 2));
+            } catch(e) { process.exit(1); }
+        " "$current_config")
 
         if [ -n "$new_config" ]; then
             save_provider_config "$new_config" || {
@@ -952,7 +936,7 @@ migrate_existing_config() {
             return 1
         fi
     else
-        log_warning "需要 jq 来迁移配置"
+        log_warning "需要 Node.js 来迁移配置"
         return 1
     fi
 
@@ -1030,20 +1014,14 @@ configure_provider() {
             api_key_url="https://platform.minimaxi.com/user-center/basic-information/interface-key"
             base_url="https://api.minimaxi.com/anthropic"
             timeout="3000000"
-            if command -v jq >/dev/null 2>&1; then
-                models_json=$(jq -n \
-                    --arg default "MiniMax-M2" \
-                    --arg small_fast "MiniMax-M2" \
-                    --arg sonnet "MiniMax-M2" \
-                    --arg opus "MiniMax-M2" \
-                    --arg haiku "MiniMax-M2" \
-                    '{
-                        "default": $default,
-                        "small_fast": $small_fast,
-                        "DEFAULT_SONNET_MODEL": $sonnet,
-                        "DEFAULT_OPUS_MODEL": $opus,
-                        "DEFAULT_HAIKU_MODEL": $haiku
-                    }')
+            if command -v node >/dev/null 2>&1; then
+                models_json=$(node -e 'console.log(JSON.stringify({
+                    default: "MiniMax-M2",
+                    small_fast: "MiniMax-M2",
+                    DEFAULT_SONNET_MODEL: "MiniMax-M2",
+                    DEFAULT_OPUS_MODEL: "MiniMax-M2",
+                    DEFAULT_HAIKU_MODEL: "MiniMax-M2"
+                }))')
             else
                 models_json='{
                     "default": "MiniMax-M2",
@@ -1059,20 +1037,14 @@ configure_provider() {
             api_key_url="https://platform.deepseek.com/api_keys"
             base_url="https://api.deepseek.com/anthropic"
             timeout="600000"
-            if command -v jq >/dev/null 2>&1; then
-                models_json=$(jq -n \
-                    --arg default "deepseek-chat" \
-                    --arg small_fast "deepseek-chat" \
-                    --arg sonnet "deepseek-chat" \
-                    --arg opus "deepseek-reasoner" \
-                    --arg haiku "deepseek-coder" \
-                    '{
-                        "default": $default,
-                        "small_fast": $small_fast,
-                        "DEFAULT_SONNET_MODEL": $sonnet,
-                        "DEFAULT_OPUS_MODEL": $opus,
-                        "DEFAULT_HAIKU_MODEL": $haiku
-                    }')
+            if command -v node >/dev/null 2>&1; then
+                models_json=$(node -e 'console.log(JSON.stringify({
+                    default: "deepseek-chat",
+                    small_fast: "deepseek-chat",
+                    DEFAULT_SONNET_MODEL: "deepseek-chat",
+                    DEFAULT_OPUS_MODEL: "deepseek-reasoner",
+                    DEFAULT_HAIKU_MODEL: "deepseek-coder"
+                }))')
             else
                 models_json='{
                     "default": "deepseek-chat",
@@ -1088,20 +1060,14 @@ configure_provider() {
             api_key_url="https://bigmodel.cn/usercenter/proj-mgmt/apikeys"
             base_url="https://open.bigmodel.cn/api/anthropic"
             timeout="3000000"
-            if command -v jq >/dev/null 2>&1; then
-                models_json=$(jq -n \
-                    --arg default "GLM-4.6" \
-                    --arg small_fast "GLM-4.6" \
-                    --arg sonnet "GLM-4.6" \
-                    --arg opus "GLM-4.6" \
-                    --arg haiku "GLM-4.5-Air" \
-                    '{
-                        "default": $default,
-                        "small_fast": $small_fast,
-                        "DEFAULT_SONNET_MODEL": $sonnet,
-                        "DEFAULT_OPUS_MODEL": $opus,
-                        "DEFAULT_HAIKU_MODEL": $haiku
-                    }')
+            if command -v node >/dev/null 2>&1; then
+                models_json=$(node -e 'console.log(JSON.stringify({
+                    default: "GLM-4.6",
+                    small_fast: "GLM-4.6",
+                    DEFAULT_SONNET_MODEL: "GLM-4.6",
+                    DEFAULT_OPUS_MODEL: "GLM-4.6",
+                    DEFAULT_HAIKU_MODEL: "GLM-4.5-Air"
+                }))')
             else
                 models_json='{
                     "default": "GLM-4.6",
@@ -1117,20 +1083,14 @@ configure_provider() {
             api_key_url="https://bigmodel.cn/usercenter/proj-mgmt/apikeys"
             base_url="https://open.bigmodel.cn/api/anthropic"
             timeout="3000000"
-            if command -v jq >/dev/null 2>&1; then
-                models_json=$(jq -n \
-                    --arg default "glm-4.5-flash" \
-                    --arg small_fast "glm-4.5-flash" \
-                    --arg sonnet "glm-4.5-flash" \
-                    --arg opus "glm-4.5-flash" \
-                    --arg haiku "glm-4.5-flash" \
-                    '{
-                        "default": $default,
-                        "small_fast": $small_fast,
-                        "DEFAULT_SONNET_MODEL": $sonnet,
-                        "DEFAULT_OPUS_MODEL": $opus,
-                        "DEFAULT_HAIKU_MODEL": $haiku
-                    }')
+            if command -v node >/dev/null 2>&1; then
+                models_json=$(node -e 'console.log(JSON.stringify({
+                    default: "glm-4.5-flash",
+                    small_fast: "glm-4.5-flash",
+                    DEFAULT_SONNET_MODEL: "glm-4.5-flash",
+                    DEFAULT_OPUS_MODEL: "glm-4.5-flash",
+                    DEFAULT_HAIKU_MODEL: "glm-4.5-flash"
+                }))')
             else
                 models_json='{
                     "default": "glm-4.5-flash",
@@ -1148,43 +1108,30 @@ configure_provider() {
     esac
 
     # 保存提供商配置
-    if command -v jq >/dev/null 2>&1; then
-        # 构建 API_KEY 变量名（兼容旧版本 bash）
-        local key_name=""
-        case $provider_name in
-            "minimax")
-                key_name="MINIMAX_API_KEY"
-                ;;
-            "deepseek")
-                key_name="DEEPSEEK_API_KEY"
-                ;;
-            "glm")
-                key_name="GLM_API_KEY"
-                ;;
-            "glm-flash")
-                key_name="GLM_API_KEY"
-                ;;
-        esac
-
-        local new_config=$(echo "$current_config" | jq \
-            --arg provider "$provider_name" \
-            --arg display "$provider_display" \
-            --arg key_name "$key_name" \
-            --arg url "$api_key_url" \
-            --arg base "$base_url" \
-            --arg key "$api_key" \
-            --arg to "$timeout" \
-            --argjson models "$models_json" \
-            '.providers[$provider] = {
-                "name": $provider,
-                "displayName": $display,
-                "apiKeyName": $key_name,
-                "apiKeyUrl": $url,
-                "baseUrl": $base,
-                "apiKey": $key,
-                "timeout": $to,
-                "models": $models
-            }')
+    if command -v node >/dev/null 2>&1; then
+        # 通过环境变量传递参数以避免引号问题
+        export MODELS_JSON="$models_json"
+        
+        local new_config=$(node -e "
+            try {
+                const config = JSON.parse(process.argv[1]);
+                const provider = '$provider_name';
+                
+                config.providers = config.providers || {};
+                config.providers[provider] = {
+                    name: provider,
+                    displayName: '$provider_display',
+                    apiKeyName: '$key_name',
+                    apiKeyUrl: '$api_key_url',
+                    baseUrl: '$base_url',
+                    apiKey: '$api_key',
+                    timeout: '$timeout',
+                    models: JSON.parse(process.env.MODELS_JSON)
+                };
+                
+                console.log(JSON.stringify(config, null, 2));
+            } catch(e) { process.exit(1); }
+        " "$current_config")
 
         if [ -n "$new_config" ]; then
             save_provider_config "$new_config" || {
@@ -1197,7 +1144,7 @@ configure_provider() {
             return 1
         fi
     else
-        log_error "需要 jq 来配置多模型系统，请安装: apt-get install jq 或 brew install jq"
+        log_error "需要 Node.js 来配置多模型系统"
         return 1
     fi
 
@@ -1212,10 +1159,12 @@ apply_provider_config() {
 
     # 获取提供商配置
     local provider_config=""
-    if command -v jq >/dev/null 2>&1; then
-        provider_config=$(jq -r ".providers[\"$provider_name\"]" "$providers_file")
+    # 获取提供商配置
+    local provider_config=""
+    if command -v node >/dev/null 2>&1; then
+        provider_config=$(json_manager "get" "$providers_file" "providers.$provider_name")
     else
-        log_error "需要 jq 来应用配置"
+        log_error "需要 Node.js 来应用配置"
         return 1
     fi
 
@@ -1225,35 +1174,35 @@ apply_provider_config() {
     fi
 
     # 提取配置信息
-    local base_url=$(echo "$provider_config" | jq -r '.baseUrl')
-    local api_key=$(echo "$provider_config" | jq -r '.apiKey')
-    local timeout=$(echo "$provider_config" | jq -r '.timeout')
-    local default_model=$(echo "$provider_config" | jq -r '.models.default')
-    local small_fast_model=$(echo "$provider_config" | jq -r '.models.small_fast')
-
     # 创建 settings.json
-    if command -v jq >/dev/null 2>&1; then
-        local settings_json=$(jq -n \
-            --arg base_url "$base_url" \
-            --arg api_key "$api_key" \
-            --arg timeout "$timeout" \
-            --arg default_model "$default_model" \
-            --arg small_fast_model "$small_fast_model" \
-            '{
-                "env": {
-                    "ANTHROPIC_BASE_URL": $base_url,
-                    "ANTHROPIC_AUTH_TOKEN": $api_key,
-                    "API_TIMEOUT_MS": $timeout,
-                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1,
-                    "ANTHROPIC_MODEL": $default_model,
-                    "ANTHROPIC_SMALL_FAST_MODEL": $small_fast_model,
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL": $default_model,
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL": $default_model,
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL": $small_fast_model
-                }
-            }')
+    if command -v node >/dev/null 2>&1; then
+        # 使用 Node.js 解析和生成配置
+        local settings_json=$(node -e "
+            try {
+                const config = JSON.parse(process.argv[1]);
+                const settings = {
+                    env: {
+                        ANTHROPIC_BASE_URL: config.baseUrl,
+                        ANTHROPIC_AUTH_TOKEN: config.apiKey,
+                        API_TIMEOUT_MS: config.timeout,
+                        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
+                        ANTHROPIC_MODEL: config.models.default,
+                        ANTHROPIC_SMALL_FAST_MODEL: config.models.small_fast,
+                        ANTHROPIC_DEFAULT_SONNET_MODEL: config.models.default,
+                        ANTHROPIC_DEFAULT_OPUS_MODEL: config.models.default,
+                        ANTHROPIC_DEFAULT_HAIKU_MODEL: config.models.small_fast
+                    }
+                };
+                console.log(JSON.stringify(settings, null, 2));
+            } catch(e) { process.exit(1); }
+        " "$provider_config")
 
-        echo "$settings_json" > "$settings_file"
+        if [ -n "$settings_json" ]; then
+            echo "$settings_json" > "$settings_file"
+        else
+            log_error "生成 settings.json 失败"
+            return 1
+        fi
     fi
 
     log_success "已切换到模型: $provider_name ($default_model)"
@@ -1272,24 +1221,22 @@ switch_provider() {
     local providers_file="$HOME/.claude/providers.json"
 
     # 检查提供商是否存在
-    if command -v jq >/dev/null 2>&1; then
-        local exists=$(jq -r ".providers[\"$provider_name\"] | type" "$providers_file" 2>/dev/null)
-        if [ "$exists" != "object" ]; then
+    if command -v node >/dev/null 2>&1; then
+        local exists=$(json_manager "get" "$providers_file" "providers.$provider_name" 2>/dev/null)
+        if [ -z "$exists" ] || [ "$exists" = "null" ]; then
             log_error "未找到已配置的提供商: $provider_name"
             return 1
         fi
 
         # 更新 activeProvider
-        local current_config=$(load_provider_config)
-        local new_config=$(echo "$current_config" | jq --arg provider "$provider_name" '.activeProvider = $provider')
-        save_provider_config "$new_config"
+        json_manager "set" "$providers_file" "activeProvider" "$provider_name"
 
         # 应用配置
         apply_provider_config "$provider_name"
 
         log_success "成功切换到: $provider_name"
     else
-        log_error "需要 jq 来切换提供商"
+        log_error "需要 Node.js 来切换提供商"
         return 1
     fi
 
@@ -1306,15 +1253,26 @@ list_providers() {
         return 0
     fi
 
-    if command -v jq >/dev/null 2>&1; then
-        active_provider=$(jq -r '.activeProvider' "$providers_file" 2>/dev/null)
+    if command -v node >/dev/null 2>&1; then
+        active_provider=$(json_manager "get" "$providers_file" "activeProvider" | tr -d '"')
 
         echo -e "${CYAN}${BOLD}📊 已配置的模型提供商：${NC}"
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo
 
         local count=0
-        jq -r '.providers | to_entries[] | "\(.key)|\(.value.displayName)|\(.value.baseUrl)"' "$providers_file" 2>/dev/null | while IFS='|' read -r name display url; do
+        # 使用 Node.js 遍历提供商
+        node -e "
+        const fs = require('fs');
+        try {
+            const config = JSON.parse(fs.readFileSync('$providers_file', 'utf8'));
+            const providers = config.providers || {};
+            Object.keys(providers).forEach(key => {
+                const p = providers[key];
+                console.log(\`\${key}|\${p.displayName || ''}|\${p.baseUrl || ''}\`);
+            });
+        } catch(e) {}
+        " | while IFS='|' read -r name display url; do
             if [ -n "$name" ]; then
                 count=$((count + 1))
                 local marker="  "
@@ -1333,8 +1291,10 @@ list_providers() {
         else
             echo -e "${GREEN}当前活跃：${NC} $active_provider"
         fi
-    else
-        echo "需要 jq 来显示提供商列表"
+    fi
+    # 备用方案，如果 node 不可用 (这里其实应该不会发生，除非没安装)
+    if ! command -v node >/dev/null 2>&1; then
+        echo "需要 Node.js 来显示提供商列表"
     fi
 }
 
@@ -1342,12 +1302,20 @@ list_providers() {
 select_provider_interactive() {
     local providers_file="$HOME/.claude/providers.json"
 
-    if ! command -v jq >/dev/null 2>&1; then
-        log_error "需要 jq 来选择提供商，请安装: apt-get install jq 或 brew install jq"
+    if ! command -v node >/dev/null 2>&1; then
+        log_error "需要 Node.js 来选择提供商"
         return 1
     fi
 
-    local count=$(jq '.providers | length' "$providers_file" 2>/dev/null)
+    local count=0
+    if [ -f "$providers_file" ]; then
+        count=$(node -e "
+            try {
+                const config = JSON.parse(require('fs').readFileSync('$providers_file'));
+                console.log(Object.keys(config.providers || {}).length);
+            } catch(e) { console.log(0); }
+        ")
+    fi
     count=${count:-0}
 
     if [ "$count" -eq 0 ]; then
@@ -1355,7 +1323,12 @@ select_provider_interactive() {
         return 1
     elif [ "$count" -eq 1 ]; then
         # 只有一个提供商，直接使用
-        local provider_name=$(jq -r '.providers | keys[0]' "$providers_file" 2>/dev/null)
+        local provider_name=$(node -e "
+            try {
+                const config = JSON.parse(require('fs').readFileSync('$providers_file'));
+                console.log(Object.keys(config.providers)[0]);
+            } catch(e) {}
+        ")
         switch_provider "$provider_name"
         return $?
     else
@@ -1370,7 +1343,15 @@ select_provider_interactive() {
                 echo -e "${CYAN}$i.${NC} $display"
                 i=$((i + 1))
             fi
-        done < <(jq -r '.providers | to_entries[] | "\(.key)|\(.value.displayName)"' "$providers_file" 2>/dev/null)
+        done < <(node -e "
+            try {
+                const config = JSON.parse(require('fs').readFileSync('$providers_file'));
+                const providers = config.providers || {};
+                Object.keys(providers).forEach(key => {
+                    console.log(\`\${key}|\${providers[key].displayName}\`);
+                });
+            } catch(e) {}
+        ")
 
         echo
         while true; do
